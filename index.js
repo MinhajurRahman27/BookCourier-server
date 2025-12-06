@@ -22,8 +22,23 @@ async function run() {
   try {
     await client.connect();
 
-    const db = client.db("bookcourier_assaignment");
-    const parcelCollection = db.collection("parcels");
+    const db = client.db("book_courier");
+    const usersCollection = db.collection("users");
+
+    //user api
+    app.post("/users", async (req, res) => {
+      const userInfo = req.body;
+      const email = userInfo.email;
+      userInfo.role = "user";
+      userInfo.createdAt = new Date();
+
+      const existingEmail = await usersCollection.findOne({ email });
+      if (existingEmail) {
+        res.send({ message: "user already exist" });
+      }
+      const result = await usersCollection.insertOne(userInfo);
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
