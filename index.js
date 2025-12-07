@@ -24,6 +24,7 @@ async function run() {
 
     const db = client.db("book_courier");
     const usersCollection = db.collection("users");
+    const booksCollection = db.collection("books");
 
     //user api
     app.post("/users", async (req, res) => {
@@ -73,6 +74,13 @@ async function run() {
       };
 
       const result = await usersCollection.updateOne(query, update);
+      res.send(result);
+    });
+
+    //book related api
+    app.post("/books", async (req, res) => {
+      const bookInfo = req.body;
+      const result = await booksCollection.insertOne(bookInfo);
       res.send(result);
     });
 
