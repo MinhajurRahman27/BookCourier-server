@@ -34,10 +34,18 @@ async function run() {
 
       const existingEmail = await usersCollection.findOne({ email });
       if (existingEmail) {
-        res.send({ message: "user already exist" });
+        return res.send({ message: "user already exist" });
       }
       const result = await usersCollection.insertOne(userInfo);
       res.send(result);
+    });
+
+    app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      res.send({ role: user?.role || "user" });
     });
 
     await client.db("admin").command({ ping: 1 });
