@@ -40,6 +40,20 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/alluser/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const checkAdmin = await usersCollection.findOne(query);
+
+      if (checkAdmin.role !== "admin") {
+        return res.send({ message: "forbidden access" });
+      }
+
+      const allUser = await usersCollection.find().toArray();
+
+      res.send(allUser);
+    });
+
     app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
       const query = { email };
