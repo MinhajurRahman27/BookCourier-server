@@ -89,7 +89,7 @@ async function run() {
       const result = await booksCollection.find().toArray();
       res.send(result);
     });
-    
+
     app.get("/book-edit/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -140,19 +140,25 @@ async function run() {
       res.send(result);
     });
 
-
     //orders related api
-    app.post('/order', async(req, res) =>{
-      const order = req.body
-      if(order){
-        order.status= "pending";
-        order.payment="unpaid"
-
+    app.post("/order", async (req, res) => {
+      const order = req.body;
+      if (order) {
+        order.status = "pending";
+        order.payment = "unpaid";
       }
-      
-      const result = await ordersCollection.insertOne(order)
-      res.send(result)
-    })
+
+      const result = await ordersCollection.insertOne(order);
+      res.send(result);
+    });
+
+    app.get("/myorder/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+
+      const result = await ordersCollection.find(query).toArray();
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
