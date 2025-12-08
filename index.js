@@ -3,6 +3,9 @@ const app = express();
 require("dotenv").config();
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
+const crypto = require("crypto");
+
 const port = process.env.PORT || 3000;
 
 //middleware
@@ -26,6 +29,63 @@ async function run() {
     const usersCollection = db.collection("users");
     const booksCollection = db.collection("books");
     const ordersCollection = db.collection("orders");
+
+    //payment stripe
+    app.post("/payment-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      amount = parseInt(paymentInfo.cost) * 100;
+      console.log(amount, paymentInfo);
+
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              unit_amount: amount,
+              product_data: {
+                name: `please pay`,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        metadata: { orderId: paymentInfo.id },
+        customer_email: paymentInfo.buyerEmail,
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/myorders?session_id={CHECKOUT_SESSION_ID}`,
+      });
+      console.log(session);
+      res.send({ url: session.url });
+    });
+
+    app.patch("/session-status", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      const paymentID = session.payment_intent;
+
+      if (session.payment_status === "paid") {
+        const orderId = session.metadata.orderId;
+        const query = { _id: new ObjectId(orderId) };
+        const update = {
+          $set: {
+            payment: "paid",
+          },
+        };
+
+        const result = await ordersCollection.updateOne(query, update);
+
+        res.send(result);
+      }
+
+      // res.send({
+      //   status: session.payment_status,
+      // paymentId: session.payment_intent
+      //   customer_email: session.customer_details.email,
+      // });
+
+      console.log(session);
+    });
 
     //user api
     app.post("/users", async (req, res) => {
