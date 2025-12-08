@@ -29,6 +29,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const booksCollection = db.collection("books");
     const ordersCollection = db.collection("orders");
+    const paymentsCollection = db.collection("payments");
 
     //payment stripe
     app.post("/payment-checkout-session", async (req, res) => {
@@ -50,9 +51,10 @@ async function run() {
           },
         ],
         mode: "payment",
-        metadata: { orderId: paymentInfo.id },
+        metadata: { orderId: paymentInfo.id, bookname: paymentInfo.bookname },
         customer_email: paymentInfo.buyerEmail,
-        success_url: `${process.env.SITE_DOMAIN}/dashboard/myorders?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancled`,
       });
       console.log(session);
       res.send({ url: session.url });
@@ -63,6 +65,11 @@ async function run() {
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
       const paymentID = session.payment_intent;
+      const query = { paymentID: paymentID };
+      const existingPayment = await paymentsCollection.findOne(query);
+      if (existingPayment) {
+        return res.send({ message: "already exist", paymentID });
+      }
 
       if (session.payment_status === "paid") {
         const orderId = session.metadata.orderId;
@@ -75,7 +82,20 @@ async function run() {
 
         const result = await ordersCollection.updateOne(query, update);
 
-        res.send(result);
+        const payment = {
+          paymentID: paymentID,
+          bookname: session.metadata.bookname,
+          amount: session.amount_total / 100,
+          date: new Date().toLocaleDateString(),
+        };
+
+        if (session.payment_status === "paid") {
+          const result = await paymentsCollection.insertOne(payment);
+        }
+
+        res.send({
+          transactionId: session.payment_intent,
+        });
       }
 
       // res.send({
