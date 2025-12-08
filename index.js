@@ -25,6 +25,7 @@ async function run() {
     const db = client.db("book_courier");
     const usersCollection = db.collection("users");
     const booksCollection = db.collection("books");
+    const ordersCollection = db.collection("orders");
 
     //user api
     app.post("/users", async (req, res) => {
@@ -88,6 +89,7 @@ async function run() {
       const result = await booksCollection.find().toArray();
       res.send(result);
     });
+    
     app.get("/book-edit/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -137,6 +139,20 @@ async function run() {
       const result = await booksCollection.deleteOne(query);
       res.send(result);
     });
+
+
+    //orders related api
+    app.post('/order', async(req, res) =>{
+      const order = req.body
+      if(order){
+        order.status= "pending";
+        order.payment="unpaid"
+
+      }
+      
+      const result = await ordersCollection.insertOne(order)
+      res.send(result)
+    })
 
     await client.db("admin").command({ ping: 1 });
     console.log(
