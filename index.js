@@ -107,6 +107,13 @@ async function run() {
       console.log(session);
     });
 
+
+    //payment collection api
+    app.get('payments', async(req, res)=>{
+      const result = await paymentsCollection.find().toArray()
+      res.send(result)
+    })
+
     //user api
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
