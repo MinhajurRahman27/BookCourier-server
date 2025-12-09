@@ -2,15 +2,40 @@ const express = require("express");
 const app = express();
 require("dotenv").config();
 const cors = require("cors");
+const admin = require("firebase-admin");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const crypto = require("crypto");
 
 const port = process.env.PORT || 3000;
 
+var serviceAccount = require("./firebase-admin-sdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 //middleware
 app.use(express.json());
 app.use(cors());
+
+//firebase token verify
+const veryfyFirebaseToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log(decoded);
+    req.decoded_email = decoded.email;
+  } catch (err) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  next();
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.3f7kxdk.mongodb.net/?appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -30,6 +55,33 @@ async function run() {
     const booksCollection = db.collection("books");
     const ordersCollection = db.collection("orders");
     const paymentsCollection = db.collection("payments");
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      console.log(user);
+
+      if (user.role !== "admin") {
+        return res.status(401).send({ message: "Unauthorized access" });
+      }
+
+      next();
+    };
+    const verifyLibrarian = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      console.log(user);
+
+      if (user.role !== "librarian") {
+        return res.status(401).send({ message: "Unauthorized access" });
+      }
+
+      next();
+    };
 
     //payment stripe
     app.post("/payment-checkout-session", async (req, res) => {
@@ -107,12 +159,11 @@ async function run() {
       console.log(session);
     });
 
-
     //payment collection api
-    app.get('payments', async(req, res)=>{
-      const result = await paymentsCollection.find().toArray()
-      res.send(result)
-    })
+    app.get("/payments", async (req, res) => {
+      const result = await paymentsCollection.find().toArray();
+      res.send(result);
+    });
 
     //user api
     app.post("/users", async (req, res) => {
@@ -129,19 +180,24 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/alluser/:email", async (req, res) => {
-      const email = req.params.email;
-      const query = { email };
-      const checkAdmin = await usersCollection.findOne(query);
+    app.get(
+      "/alluser/:email",
+      veryfyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+        const query = { email };
+        const checkAdmin = await usersCollection.findOne(query);
 
-      if (checkAdmin.role !== "admin") {
-        return res.send({ message: "forbidden access" });
+        if (checkAdmin.role !== "admin") {
+          return res.send({ message: "forbidden access" });
+        }
+
+        const allUser = await usersCollection.find().toArray();
+
+        res.send(allUser);
       }
-
-      const allUser = await usersCollection.find().toArray();
-
-      res.send(allUser);
-    });
+    );
 
     app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
@@ -151,19 +207,24 @@ async function run() {
       res.send({ role: user?.role || "user" });
     });
 
-    app.patch("/update-user/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const updateInfo = req.body;
-      const update = {
-        $set: {
-          role: updateInfo.role,
-        },
-      };
+    app.patch(
+      "/update-user/:id",
+      veryfyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateInfo = req.body;
+        const update = {
+          $set: {
+            role: updateInfo.role,
+          },
+        };
 
-      const result = await usersCollection.updateOne(query, update);
-      res.send(result);
-    });
+        const result = await usersCollection.updateOne(query, update);
+        res.send(result);
+      }
+    );
 
     //book related api
     app.post("/books", async (req, res) => {
@@ -172,7 +233,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/allbooks", async (req, res) => {
+    app.get("/allbooks", veryfyFirebaseToken, verifyAdmin, async (req, res) => {
       const result = await booksCollection.find().toArray();
       res.send(result);
     });
@@ -228,7 +289,7 @@ async function run() {
     });
 
     //orders related api
-    app.post("/order", async (req, res) => {
+    app.post("/order", veryfyFirebaseToken, async (req, res) => {
       const order = req.body;
       if (order) {
         order.status = "pending";
@@ -239,7 +300,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/myorder/:email", async (req, res) => {
+    app.get("/myorder/:email", veryfyFirebaseToken, async (req, res) => {
       const email = req.params.email;
       const query = { email };
 
@@ -258,6 +319,27 @@ async function run() {
       };
 
       const result = await ordersCollection.updateOne(query, update);
+      res.send(result);
+    });
+
+    app.delete(
+      "/delete-order/:id",
+      veryfyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = {
+          bookId: id,
+        };
+
+        const result = await ordersCollection.deleteOne(query);
+        res.send(result);
+      }
+    );
+
+    //all ordered book
+    app.get("/all-order-book", async (req, res) => {
+      const result = await ordersCollection.find().toArray();
       res.send(result);
     });
 
