@@ -29,7 +29,7 @@ const veryfyFirebaseToken = async (req, res, next) => {
   try {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
-    console.log(decoded);
+    // console.log(decoded);
     req.decoded_email = decoded.email;
   } catch (err) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -55,13 +55,15 @@ async function run() {
     const booksCollection = db.collection("books");
     const ordersCollection = db.collection("orders");
     const paymentsCollection = db.collection("payments");
+    const wishlistCollection = db.collection("wishlist");
+    const reviewCollection = db.collection("reviews");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded_email;
       const query = { email };
       const user = await usersCollection.findOne(query);
 
-      console.log(user);
+      // console.log(user);
 
       if (user.role !== "admin") {
         return res.status(401).send({ message: "Unauthorized access" });
@@ -74,9 +76,22 @@ async function run() {
       const query = { email };
       const user = await usersCollection.findOne(query);
 
-      console.log(user);
+      // console.log(user);
 
       if (user.role !== "librarian") {
+        return res.status(401).send({ message: "Unauthorized access" });
+      }
+
+      next();
+    };
+    const verifyUser = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      // console.log(user);
+
+      if (user.role !== "user") {
         return res.status(401).send({ message: "Unauthorized access" });
       }
 
@@ -87,7 +102,7 @@ async function run() {
     app.post("/payment-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
       amount = parseInt(paymentInfo.cost) * 100;
-      console.log(amount, paymentInfo);
+      // console.log(amount, paymentInfo);
 
       const session = await stripe.checkout.sessions.create({
         line_items: [
@@ -108,20 +123,29 @@ async function run() {
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancled`,
       });
-      console.log(session);
+      // console.log(session);
       res.send({ url: session.url });
     });
 
     app.patch("/session-status", async (req, res) => {
       const sessionId = req.query.session_id;
+
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-      const paymentID = session.payment_intent;
-      const query = { paymentID: paymentID };
-      const existingPayment = await paymentsCollection.findOne(query);
+      const transactionId = session.payment_intent;
+
+      console.log("transiction id prothome", transactionId);
+
+      const existingPayment = await paymentsCollection.findOne({
+        transactionId,
+      });
+
       if (existingPayment) {
-        return res.send({ message: "already exist", paymentID });
+        console.log("existing payment id", existingPayment);
+        return res.send({ message: "already exist", transactionId });
       }
+
+      const query = { transactionId: transactionId };
 
       if (session.payment_status === "paid") {
         const orderId = session.metadata.orderId;
@@ -135,13 +159,13 @@ async function run() {
         const result = await ordersCollection.updateOne(query, update);
 
         const payment = {
-          paymentID: paymentID,
+          transactionId: transactionId,
           bookname: session.metadata.bookname,
           amount: session.amount_total / 100,
           date: new Date().toLocaleDateString(),
         };
 
-        if (session.payment_status === "paid") {
+        if (!existingPayment) {
           const result = await paymentsCollection.insertOne(payment);
         }
 
@@ -156,11 +180,11 @@ async function run() {
       //   customer_email: session.customer_details.email,
       // });
 
-      console.log(session);
+      // console.log(session);
     });
 
     //payment collection api
-    app.get("/payments", async (req, res) => {
+    app.get("/payments", veryfyFirebaseToken, verifyUser, async (req, res) => {
       const result = await paymentsCollection.find().toArray();
       res.send(result);
     });
@@ -227,16 +251,25 @@ async function run() {
     );
 
     //book related api
-    app.post("/books", async (req, res) => {
-      const bookInfo = req.body;
-      const result = await booksCollection.insertOne(bookInfo);
-      res.send(result);
-    });
+    app.post(
+      "/books",
+      veryfyFirebaseToken,
+      verifyLibrarian,
+      async (req, res) => {
+        const bookInfo = req.body;
+        const result = await booksCollection.insertOne(bookInfo);
+        res.send(result);
+      }
+    );
 
-    app.get("/allbooks", veryfyFirebaseToken, verifyAdmin, async (req, res) => {
-      const result = await booksCollection.find().toArray();
-      res.send(result);
-    });
+    app.get(
+      "/allbooks",
+
+      async (req, res) => {
+        const result = await booksCollection.find().toArray();
+        res.send(result);
+      }
+    );
 
     app.get("/book-edit/:id", async (req, res) => {
       const id = req.params.id;
@@ -246,47 +279,62 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/books-edit/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const updateInfo = req.body;
-      console.log(updateInfo);
-      const update = {
-        $set: {
-          bookname: updateInfo.bookname,
-          bookimage: updateInfo.bookimage,
-          author: updateInfo.author,
-          status: updateInfo.status,
-          price: updateInfo.price,
-        },
-      };
+    app.patch(
+      "/books-edit/:id",
+      veryfyFirebaseToken,
+      verifyLibrarian,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateInfo = req.body;
+        // console.log(updateInfo);
+        const update = {
+          $set: {
+            bookname: updateInfo.bookname,
+            bookimage: updateInfo.bookimage,
+            author: updateInfo.author,
+            status: updateInfo.status,
+            price: updateInfo.price,
+          },
+        };
 
-      const result = await booksCollection.updateOne(query, update);
-      console.log(result);
-      res.send(result);
-    });
-    app.patch("/books-update/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const updateInfo = req.body;
-      const update = {
-        $set: {
-          status: updateInfo.status,
-        },
-      };
+        const result = await booksCollection.updateOne(query, update);
+        // console.log(result);
+        res.send(result);
+      }
+    );
+    app.patch(
+      "/books-update/:id",
+      veryfyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateInfo = req.body;
+        const update = {
+          $set: {
+            status: updateInfo.status,
+          },
+        };
 
-      const result = await booksCollection.updateOne(query, update);
-      console.log(result);
-      res.send(result);
-    });
+        const result = await booksCollection.updateOne(query, update);
+        // console.log(result);
+        res.send(result);
+      }
+    );
 
-    app.delete("/delete-book/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
+    app.delete(
+      "/delete-book/:id",
+      veryfyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
 
-      const result = await booksCollection.deleteOne(query);
-      res.send(result);
-    });
+        const result = await booksCollection.deleteOne(query);
+        res.send(result);
+      }
+    );
 
     //orders related api
     app.post("/order", veryfyFirebaseToken, async (req, res) => {
@@ -300,27 +348,37 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/myorder/:email", veryfyFirebaseToken, async (req, res) => {
-      const email = req.params.email;
-      const query = { email };
+    app.get(
+      "/myorder/:email",
+      veryfyFirebaseToken,
+      verifyUser,
+      async (req, res) => {
+        const email = req.params.email;
+        const query = { email };
 
-      const result = await ordersCollection.find(query).toArray();
-      res.send(result);
-    });
+        const result = await ordersCollection.find(query).toArray();
+        res.send(result);
+      }
+    );
 
-    app.patch("/update-order/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const updateStatus = req.body;
-      const update = {
-        $set: {
-          status: updateStatus.status,
-        },
-      };
+    app.patch(
+      "/update-order/:id",
+      veryfyFirebaseToken,
 
-      const result = await ordersCollection.updateOne(query, update);
-      res.send(result);
-    });
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateStatus = req.body;
+        const update = {
+          $set: {
+            status: updateStatus.status,
+          },
+        };
+
+        const result = await ordersCollection.updateOne(query, update);
+        res.send(result);
+      }
+    );
 
     app.delete(
       "/delete-order/:id",
@@ -338,8 +396,50 @@ async function run() {
     );
 
     //all ordered book
-    app.get("/all-order-book", async (req, res) => {
-      const result = await ordersCollection.find().toArray();
+    app.get(
+      "/all-order-book",
+      veryfyFirebaseToken,
+      verifyLibrarian,
+      async (req, res) => {
+        const result = await ordersCollection.find().toArray();
+        res.send(result);
+      }
+    );
+
+    app.post(
+      "/user-wishlist/:email",
+      veryfyFirebaseToken,
+
+      async (req, res) => {
+        const bookInfo = req.body;
+        const email = req.params.email;
+        if (email) {
+          bookInfo.email = email;
+        }
+        const result = await wishlistCollection.insertOne(bookInfo);
+        res.send(result);
+      }
+    );
+
+    app.get("/mywishlist-get/:email", veryfyFirebaseToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const result = await wishlistCollection.find(query).toArray();
+
+      res.send(result);
+    });
+
+    app.post("/review", async (req, res) => {
+      const review = req.body;
+      const result = await reviewCollection.insertOne(review);
+
+      res.send(result);
+    });
+
+    app.get("/reviews/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { bookId: id };
+      const result = await reviewCollection.find(query).toArray();
       res.send(result);
     });
 
