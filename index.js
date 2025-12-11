@@ -131,7 +131,7 @@ async function run() {
       const sessionId = req.query.session_id;
 
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-
+      console.log(session);
       const transactionId = session.payment_intent;
 
       console.log("transiction id prothome", transactionId);
@@ -160,6 +160,7 @@ async function run() {
 
         const payment = {
           transactionId: transactionId,
+          email: session.customer_details.email,
           bookname: session.metadata.bookname,
           amount: session.amount_total / 100,
           date: new Date().toLocaleDateString(),
@@ -184,10 +185,20 @@ async function run() {
     });
 
     //payment collection api
-    app.get("/payments", veryfyFirebaseToken, verifyUser, async (req, res) => {
-      const result = await paymentsCollection.find().toArray();
-      res.send(result);
-    });
+    app.get(
+      "/payments/:email",
+      veryfyFirebaseToken,
+      verifyUser,
+      async (req, res) => {
+        const email = req.params.email;
+        const query = {};
+        if (email) {
+          query.email = email;
+        }
+        const result = await paymentsCollection.find(query).toArray();
+        res.send(result);
+      }
+    );
 
     //user api
     app.post("/users", async (req, res) => {
@@ -257,19 +268,42 @@ async function run() {
       verifyLibrarian,
       async (req, res) => {
         const bookInfo = req.body;
+        if (bookInfo) {
+          bookInfo.date = new Date();
+        }
         const result = await booksCollection.insertOne(bookInfo);
         res.send(result);
       }
     );
 
-    app.get(
-      "/allbooks",
+    app.get("/allbooks", async (req, res) => {
+      const searchText = req.query.searchText;
+      console.log(searchText);
+      const query = {};
 
-      async (req, res) => {
-        const result = await booksCollection.find().toArray();
-        res.send(result);
+      if (searchText) {
+        query.$or = [
+          {
+            bookname: { $regex: searchText, $options: "i" },
+          },
+        ];
       }
-    );
+
+      const cursor = booksCollection.find(query);
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.get("/libraian-books/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+
+      const cursor = booksCollection.find(query);
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
 
     app.get("/book-edit/:id", async (req, res) => {
       const id = req.params.id;
@@ -440,6 +474,13 @@ async function run() {
       const id = req.params.id;
       const query = { bookId: id };
       const result = await reviewCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get("/latest-book", async (req, res) => {
+      const cursor = booksCollection.find().sort({ date: -1 }).limit(4);
+
+      const result = await cursor.toArray();
       res.send(result);
     });
 
