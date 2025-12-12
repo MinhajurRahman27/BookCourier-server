@@ -9,9 +9,9 @@ const crypto = require("crypto");
 
 const port = process.env.PORT || 3000;
 
-
-
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
@@ -281,8 +281,9 @@ async function run() {
 
     app.get("/allbooks", async (req, res) => {
       const searchText = req.query.searchText;
-      console.log(searchText);
-      const query = {};
+      const status = req.query.status;
+
+      const query = { status: status };
 
       if (searchText) {
         query.$or = [
@@ -434,11 +435,13 @@ async function run() {
 
     //all ordered book
     app.get(
-      "/all-order-book",
+      "/all-order-book/:email",
       veryfyFirebaseToken,
       verifyLibrarian,
       async (req, res) => {
-        const result = await ordersCollection.find().toArray();
+        const email = req.params.email;
+        const query = { provider: email };
+        const result = await ordersCollection.find(query).toArray();
         res.send(result);
       }
     );
