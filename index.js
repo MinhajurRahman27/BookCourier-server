@@ -299,6 +299,13 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/allbooks/admin", async (req, res) => {
+      const cursor = booksCollection.find();
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.get("/libraian-books/:email", async (req, res) => {
       const email = req.params.email;
       const query = { email };
