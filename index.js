@@ -326,13 +326,18 @@ async function run() {
       }
     );
 
-    app.get("/book-edit/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
+    app.get(
+      "/book-edit/:id",
+      veryfyFirebaseToken,
+      verifyLibrarian,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
 
-      const result = await booksCollection.findOne(query);
-      res.send(result);
-    });
+        const result = await booksCollection.findOne(query);
+        res.send(result);
+      }
+    );
 
     app.patch(
       "/books-edit/:id",
@@ -486,7 +491,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/review", async (req, res) => {
+    app.post("/review", veryfyFirebaseToken, async (req, res) => {
       const review = req.body;
       const result = await reviewCollection.insertOne(review);
 
