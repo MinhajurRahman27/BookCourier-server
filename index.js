@@ -311,15 +311,20 @@ async function run() {
       }
     );
 
-    app.get("/libraian-books/:email", async (req, res) => {
-      const email = req.params.email;
-      const query = { email };
+    app.get(
+      "/libraian-books/:email",
+      veryfyFirebaseToken,
+      verifyLibrarian,
+      async (req, res) => {
+        const email = req.params.email;
+        const query = { email };
 
-      const cursor = booksCollection.find(query);
+        const cursor = booksCollection.find(query);
 
-      const result = await cursor.toArray();
-      res.send(result);
-    });
+        const result = await cursor.toArray();
+        res.send(result);
+      }
+    );
 
     app.get("/book-edit/:id", async (req, res) => {
       const id = req.params.id;
