@@ -329,7 +329,6 @@ async function run() {
     app.get(
       "/book-edit/:id",
       veryfyFirebaseToken,
-      verifyLibrarian,
       async (req, res) => {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
